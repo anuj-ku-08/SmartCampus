@@ -1,0 +1,11 @@
+{
+  "name": "Smart Student Academic & Hostel Attendance System",
+  "description": "Unified role-based platform for 10-second dynamic rolling QR attendance with GPS geofencing and hostel night curfew oversight.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
