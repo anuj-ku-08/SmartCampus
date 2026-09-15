@@ -27,7 +27,12 @@ async function startServer() {
   app.use('/api/admin', adminRoutes);
 
   // Vite middleware for development vs static build in production
-  if (process.env.NODE_ENV !== 'production') {
+  const isProduction =
+    process.env.NODE_ENV === 'production' ||
+    (typeof __filename !== 'undefined' && __filename.endsWith('.cjs')) ||
+    Boolean(process.argv[1]?.endsWith('.cjs'));
+
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
