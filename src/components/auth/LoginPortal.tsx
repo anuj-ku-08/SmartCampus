@@ -28,8 +28,13 @@ interface RoleConfig {
 }
 
 export const LoginPortal: React.FC<LoginPortalProps> = ({ onLoginSuccess }) => {
-  const [selectedRole, setSelectedRole] = useState<UserRole>('student');
-  const [email, setEmail] = useState('student@campus.edu');
+  const [selectedRole, setSelectedRole] = useState<UserRole>(() => {
+    const saved = localStorage.getItem('campus_last_role') as UserRole;
+    return saved || 'student';
+  });
+  const [email, setEmail] = useState<string>(() => {
+    return localStorage.getItem('campus_last_email') || 'student@campus.edu';
+  });
   const [password, setPassword] = useState('pass123');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -67,15 +72,30 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({ onLoginSuccess }) => {
     },
   ];
 
+  const demoEmails = ['student@campus.edu', 'faculty@campus.edu', 'warden@campus.edu', 'admin@campus.edu', 'priya@campus.edu', 'rohit@campus.edu', 'sneha@campus.edu', 'dev@campus.edu'];
+
   const handleRoleChange = (role: UserRole) => {
     setSelectedRole(role);
     const target = roles.find((r) => r.role === role);
     if (target) {
-      setEmail(target.defaultEmail);
-      setPassword('pass123');
+      // Only switch email if it's empty or currently matching another default demo email
+      if (!email.trim() || demoEmails.includes(email.trim().toLowerCase())) {
+        setEmail(target.defaultEmail);
+        setPassword('pass123');
+      }
     }
     setErrorMessage(null);
     setSuccessMessage(null);
+  };
+
+  const handleFillDemoCredentials = () => {
+    const target = roles.find((r) => r.role === selectedRole);
+    if (target) {
+      setEmail(target.defaultEmail);
+      setPassword('pass123');
+      setSuccessMessage(`Loaded demo credentials for ${target.label}`);
+      setTimeout(() => setSuccessMessage(null), 2500);
+    }
   };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -91,6 +111,8 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({ onLoginSuccess }) => {
 
     try {
       const res = await api.login(email.trim(), password);
+      localStorage.setItem('campus_last_email', email.trim());
+      localStorage.setItem('campus_last_role', res.user.role);
       onLoginSuccess(res.user);
     } catch (err: any) {
       setErrorMessage(err.message || 'Invalid email or password. Please try again.');
@@ -237,7 +259,13 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({ onLoginSuccess }) => {
 
                   {/* RESET PASSWORD UNDER LOGIN PASSWORD FIELD */}
                   <div className="mt-2 flex items-center justify-between text-xs">
-                    <span className="text-slate-500 text-[11px]">Default: pass123</span>
+                    <button
+                      type="button"
+                      onClick={handleFillDemoCredentials}
+                      className="text-slate-400 hover:text-slate-200 text-[11px] transition-colors underline decoration-slate-600"
+                    >
+                      Autofill Demo Credentials
+                    </button>
                     <button
                       id="reset-password-btn"
                       type="button"
@@ -366,9 +394,15 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({ onLoginSuccess }) => {
         </div>
 
         {/* Minimal Footer */}
-        <p className="text-center text-[11px] text-slate-500 mt-6">
-          Authorized campus personnel only • Access logs are recorded
-        </p>
+        <div className="mt-5 text-center space-y-1.5">
+          <div className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 text-[11px] text-slate-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>Persistent Database Active</span>
+          </div>
+          <p className="text-center text-[11px] text-slate-500">
+            Authorized campus personnel only • Access logs are recorded
+          </p>
+        </div>
       </div>
     </div>
   );

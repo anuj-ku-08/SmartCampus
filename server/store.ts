@@ -1,4 +1,6 @@
 import bcrypt from 'bcryptjs';
+import fs from 'fs';
+import path from 'path';
 
 export interface User {
   _id: string;
@@ -105,8 +107,11 @@ export interface HostelConfig {
   curfewAlertActive: boolean;
 }
 
-// Seed initial system data
-class InMemoryDatabase {
+// Persistent file storage configuration
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
+const DB_FILE = process.env.DATABASE_PATH || path.join(DATA_DIR, 'database.json');
+
+class PersistentDatabase {
   users: User[] = [];
   sessions: AcademicSession[] = [];
   attendance: AcademicAttendance[] = [];
@@ -120,9 +125,173 @@ class InMemoryDatabase {
     roomsPerFloor: 8,
     curfewAlertActive: true,
   };
+  emailLogs: any[] = [];
+  lastSavedAt: string | null = null;
+  private saveTimeout: any = null;
 
   constructor() {
+    const loaded = this.load();
+    if (!loaded) {
+      console.log('[DATABASE] No valid persistent database file found. Seeding initial baseline...');
+      this.seed();
+      this.saveSync();
+    }
+  }
+
+  load(): boolean {
+    try {
+      if (!fs.existsSync(DB_FILE)) {
+        return false;
+      }
+      const raw = fs.readFileSync(DB_FILE, 'utf-8');
+      if (!raw || !raw.trim()) {
+        return false;
+      }
+      const data = JSON.parse(raw);
+      if (Array.isArray(data.users) && data.users.length > 0) {
+        this.users = data.users;
+        this.sessions = Array.isArray(data.sessions) ? data.sessions : [];
+        this.attendance = Array.isArray(data.attendance) ? data.attendance : [];
+        this.hostelLogs = Array.isArray(data.hostelLogs) ? data.hostelLogs : [];
+        this.outpasses = Array.isArray(data.outpasses) ? data.outpasses : [];
+        this.classrooms = Array.isArray(data.classrooms) ? data.classrooms : [];
+        if (data.hostelConfig && typeof data.hostelConfig === 'object') {
+          this.hostelConfig = { ...this.hostelConfig, ...data.hostelConfig };
+        }
+        this.emailLogs = Array.isArray(data.emailLogs) ? data.emailLogs : [];
+        this.lastSavedAt = data.lastSavedAt || new Date().toISOString();
+        console.log(
+          `[DATABASE] Loaded persistent database from ${DB_FILE} (${this.users.length} users, ${this.attendance.length} attendances, ${this.outpasses.length} outpasses).`
+        );
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('[DATABASE] Failed to load persistent data file, falling back to seed:', err);
+      return false;
+    }
+  }
+
+  save(immediate = false): void {
+    if (immediate) {
+      this.saveSync();
+      return;
+    }
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+    }
+    this.saveTimeout = setTimeout(() => {
+      this.saveSync();
+    }, 250);
+  }
+
+  saveSync(): void {
+    try {
+      const dir = path.dirname(DB_FILE);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      this.lastSavedAt = new Date().toISOString();
+      const payload = {
+        version: 1,
+        lastSavedAt: this.lastSavedAt,
+        users: this.users,
+        sessions: this.sessions,
+        attendance: this.attendance,
+        hostelLogs: this.hostelLogs,
+        outpasses: this.outpasses,
+        classrooms: this.classrooms,
+        hostelConfig: this.hostelConfig,
+        emailLogs: this.emailLogs,
+      };
+      fs.writeFileSync(DB_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+    } catch (err) {
+      console.error('[DATABASE] Error saving persistent database to disk:', err);
+    }
+  }
+
+  exportData(): any {
+    return {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      lastSavedAt: this.lastSavedAt,
+      users: this.users,
+      sessions: this.sessions,
+      attendance: this.attendance,
+      hostelLogs: this.hostelLogs,
+      outpasses: this.outpasses,
+      classrooms: this.classrooms,
+      hostelConfig: this.hostelConfig,
+      emailLogs: this.emailLogs,
+    };
+  }
+
+  importData(data: any): { success: boolean; message: string; counts: any } {
+    if (!data || typeof data !== 'object') {
+      throw new Error('Invalid database format. Expected a JSON object.');
+    }
+    if (!Array.isArray(data.users)) {
+      throw new Error('Invalid backup file: "users" collection is required.');
+    }
+
+    this.users = data.users;
+    this.sessions = Array.isArray(data.sessions) ? data.sessions : [];
+    this.attendance = Array.isArray(data.attendance) ? data.attendance : [];
+    this.hostelLogs = Array.isArray(data.hostelLogs) ? data.hostelLogs : [];
+    this.outpasses = Array.isArray(data.outpasses) ? data.outpasses : [];
+    this.classrooms = Array.isArray(data.classrooms) ? data.classrooms : [];
+    if (data.hostelConfig && typeof data.hostelConfig === 'object') {
+      this.hostelConfig = { ...this.hostelConfig, ...data.hostelConfig };
+    }
+    if (Array.isArray(data.emailLogs)) {
+      this.emailLogs = data.emailLogs;
+    }
+
+    this.saveSync();
+    return {
+      success: true,
+      message: 'Database state successfully restored and saved to persistent disk.',
+      counts: {
+        users: this.users.length,
+        attendance: this.attendance.length,
+        outpasses: this.outpasses.length,
+        sessions: this.sessions.length,
+        hostelLogs: this.hostelLogs.length,
+      },
+    };
+  }
+
+  resetToDefaultSeed(): void {
     this.seed();
+    this.saveSync();
+    console.log('[DATABASE] Database reset to default seed state upon explicit request.');
+  }
+
+  getStatus(): any {
+    let fileSize = 0;
+    try {
+      if (fs.existsSync(DB_FILE)) {
+        fileSize = fs.statSync(DB_FILE).size;
+      }
+    } catch {
+      fileSize = 0;
+    }
+
+    return {
+      filePath: DB_FILE,
+      dataDir: DATA_DIR,
+      fileSize,
+      lastSavedAt: this.lastSavedAt,
+      counts: {
+        users: this.users.length,
+        attendance: this.attendance.length,
+        outpasses: this.outpasses.length,
+        sessions: this.sessions.length,
+        hostelLogs: this.hostelLogs.length,
+        classrooms: this.classrooms.length,
+        emailLogs: this.emailLogs.length,
+      },
+    };
   }
 
   seed() {
@@ -408,4 +577,4 @@ class InMemoryDatabase {
   }
 }
 
-export const db = new InMemoryDatabase();
+export const db = new PersistentDatabase();

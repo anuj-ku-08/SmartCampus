@@ -127,6 +127,7 @@ router.post('/verify-status', authMiddleware, (req, res) => {
     };
     db.hostelLogs.push(log);
   }
+  db.save();
 
   return res.json({
     success: true,
@@ -187,6 +188,7 @@ router.post('/scan-barcode', authMiddleware, (req, res) => {
     };
     db.hostelLogs.push(log);
   }
+  db.save();
 
   return res.json({
     success: true,
@@ -348,6 +350,7 @@ router.post('/outpass', authMiddleware, (req, res) => {
   };
 
   db.outpasses.unshift(newOutpass);
+  db.save();
 
   return res.json({
     success: true,
@@ -376,6 +379,7 @@ router.post('/outpass/:id/review', authMiddleware, async (req, res) => {
   outpass.reviewedByName = authUser.name;
   outpass.reviewedAt = new Date().toISOString();
   outpass.reviewRemarks = remarks || (decision === 'approved' ? 'Approved by Warden' : 'Rejected');
+  db.save();
 
   // If approved, sync to hostel log for today as 'on_leave'
   if (decision === 'approved') {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Shield,
   Users,
@@ -15,6 +15,10 @@ import {
   Lock,
   RotateCcw,
   Sparkles,
+  Database,
+  Download,
+  Upload,
+  HardDrive,
 } from 'lucide-react';
 import { User, ClassroomConfig, HostelConfig, EmailAlertRecord } from '../../types';
 import { api } from '../../services/api';
@@ -48,6 +52,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshA
   const [batchTargetRole, setBatchTargetRole] = useState<'student' | 'faculty' | 'warden' | 'all'>('student');
   const [batchDefaultPassword, setBatchDefaultPassword] = useState('pass123');
 
+  // Database persistence state
+  const [dbStatus, setDbStatus] = useState<any>(null);
+  const [isRestoringDb, setIsRestoringDb] = useState(false);
+  const [dbOperationMessage, setDbOperationMessage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // New classroom modal
   const [showAddClassroom, setShowAddClassroom] = useState(false);
   const [newClassroom, setNewClassroom] = useState({
@@ -75,12 +85,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshA
 
   const loadData = async () => {
     try {
-      const [st, u, cr, hc, logs] = await Promise.all([
+      const [st, u, cr, hc, logs, dbSt] = await Promise.all([
         api.getAdminStats(),
         api.getUsers(),
         api.getClassrooms(),
         api.getHostelConfig(),
         api.getNotificationLogs(),
+        api.getDatabaseStatus().catch(() => null),
       ]);
       setStats(st);
       setUsers(u.users);
@@ -88,10 +99,66 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshA
       setHostelConfig(hc.config);
       setCurfewTimeInput(hc.config.curfewTime || '21:30');
       setEmailLogs(logs.logs);
+      if (dbSt && dbSt.status) {
+        setDbStatus(dbSt.status);
+      }
     } catch (err) {
       console.error('Failed to load admin stats:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDownloadBackup = async () => {
+    try {
+      await api.downloadDatabaseBackup();
+      setDbOperationMessage('Database backup downloaded successfully.');
+      setTimeout(() => setDbOperationMessage(null), 3500);
+    } catch (err: any) {
+      alert(err.message || 'Failed to download database backup');
+    }
+  };
+
+  const handleRestoreFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsRestoringDb(true);
+      const text = await file.text();
+      const json = JSON.parse(text);
+      const res = await api.restoreDatabase(json);
+      setDbOperationMessage(res.message || 'Database restored successfully.');
+      setTimeout(() => setDbOperationMessage(null), 4000);
+      await loadData();
+      onRefreshAll();
+    } catch (err: any) {
+      alert(err.message || 'Failed to restore database from backup file.');
+    } finally {
+      setIsRestoringDb(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleResetDemoDatabase = async () => {
+    if (
+      !window.confirm(
+        'Are you sure you want to reset all data back to the default institutional demo state? All newly created users, sessions, and logs will be replaced.'
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const res = await api.resetDatabaseDemo();
+      setDbOperationMessage(res.message);
+      setTimeout(() => setDbOperationMessage(null), 4000);
+      await loadData();
+      onRefreshAll();
+    } catch (err: any) {
+      alert(err.message || 'Failed to reset database');
     }
   };
 
@@ -496,6 +563,106 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshA
                   <p className="text-[10px] text-slate-400">Recipient: {log.recipientEmail}</p>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* Database Persistence & Backup Management */}
+          <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center space-x-2">
+                <Database className="w-4 h-4 text-emerald-600" />
+                <h3 className="font-bold text-slate-900 text-base">Database & Disk Persistence</h3>
+              </div>
+              <div className="flex items-center space-x-1.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-semibold">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Persistent File Storage</span>
+              </div>
+            </div>
+
+            {dbOperationMessage && (
+              <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center space-x-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                <span>{dbOperationMessage}</span>
+              </div>
+            )}
+
+            {/* Storage Metadata */}
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-1.5">
+              <div className="flex items-center justify-between text-slate-600">
+                <span>Disk Storage File:</span>
+                <span className="font-mono text-slate-800 text-[11px] font-semibold truncate max-w-[170px]" title={dbStatus?.filePath}>
+                  {dbStatus?.filePath ? dbStatus.filePath.split('/').slice(-2).join('/') : 'data/database.json'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-600">
+                <span>Database File Size:</span>
+                <span className="font-mono text-slate-800 font-semibold text-[11px]">
+                  {dbStatus?.fileSize ? `${(dbStatus.fileSize / 1024).toFixed(1)} KB` : 'Active'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-600">
+                <span>Active Users Stored:</span>
+                <span className="font-mono text-slate-800 font-semibold text-[11px]">
+                  {dbStatus?.counts?.users ?? users.length} accounts
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-600">
+                <span>Attendance Records:</span>
+                <span className="font-mono text-slate-800 font-semibold text-[11px]">
+                  {dbStatus?.counts?.attendance ?? stats?.totalAttendanceScans ?? 0} scans
+                </span>
+              </div>
+            </div>
+
+            {/* Backup & Restore Controls */}
+            <div className="space-y-2 pt-1">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadBackup}
+                  className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs flex items-center justify-center space-x-1.5 transition-colors shadow-xs"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Backup</span>
+                </button>
+
+                <label className="w-full py-2 px-3 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center justify-center space-x-1.5 transition-colors cursor-pointer">
+                  <Upload className="w-3.5 h-3.5 text-slate-600" />
+                  <span>{isRestoringDb ? 'Restoring...' : 'Restore JSON'}</span>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".json"
+                    onChange={handleRestoreFile}
+                    disabled={isRestoringDb}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleResetDemoDatabase}
+                className="w-full py-2 px-3 rounded-xl border border-rose-200 bg-rose-50/50 hover:bg-rose-50 text-rose-700 font-semibold text-xs flex items-center justify-center space-x-1.5 transition-colors"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset to Clean Demo Records</span>
+              </button>
+            </div>
+
+            {/* Cloud Deployment Persistence Note */}
+            <div className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80 text-[11px] text-amber-900 space-y-1">
+              <p className="font-semibold flex items-center space-x-1">
+                <HardDrive className="w-3 h-3 text-amber-700 shrink-0" />
+                <span>Render.com Cloud Persistence Guide:</span>
+              </p>
+              <p className="text-amber-800 leading-relaxed">
+                Free-tier cloud containers (like Render.com) spin down and reset files when rebuilt. To persist data permanently across free redeployments:
+              </p>
+              <ul className="list-disc list-inside space-y-0.5 text-[10.5px] text-amber-800">
+                <li>Attach a <strong>Render Persistent Disk</strong> mounted at <code className="bg-amber-100/80 px-1 py-0.5 rounded text-amber-950 font-mono">/var/data</code> and add environment variable <code className="bg-amber-100/80 px-1 py-0.5 rounded text-amber-950 font-mono">DATA_DIR=/var/data</code>.</li>
+                <li>Or click <strong>Download Backup</strong> before deploying updates and <strong>Restore JSON</strong> in 1 click after redeploy.</li>
+              </ul>
             </div>
           </div>
         </div>

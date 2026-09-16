@@ -105,6 +105,20 @@ npm start
 
 > **Crucial for Render**: Ensure the Build Command includes `npm run build` so `dist/server.cjs` is compiled prior to `npm start`.
 
+### Data Persistence on Render.com & Cloud Platforms
+
+The application features a **file-based persistent database engine** stored in `data/database.json` (or custom `$DATA_DIR/database.json`). All attendance records, created users, password updates, outpasses, and logs are automatically written to disk.
+
+#### Understanding Ephemeral Disks on Free Cloud Services:
+- Render.com's **free tier** uses ephemeral container filesystems: each redeploy or server spin-down launches a fresh container image.
+- **Option 1 (Zero Cost - 1-Click Backup & Restore)**:
+  - Inside the **Admin Dashboard**, click **Download Backup** to export your complete database as a `.json` file anytime.
+  - After redeploying, click **Restore JSON** to import all your data in 1 click.
+- **Option 2 (Permanent Disk Mounting)**:
+  - On Render.com, add a **Persistent Disk** to your service with **Mount Path**: `/var/data`.
+  - Add an environment variable: `DATA_DIR=/var/data`.
+  - The application will automatically store and read `database.json` from the persistent disk, surviving all redeployments and restarts.
+
 ### Deploying to Google Cloud Run
 
 This project is fully compatible with Google Cloud Run and containerized platforms.

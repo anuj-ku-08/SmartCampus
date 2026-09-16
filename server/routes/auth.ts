@@ -124,6 +124,7 @@ router.post('/reset-password', (req, res) => {
   const targetPassword = newPassword && newPassword.trim().length > 0 ? newPassword.trim() : 'pass123';
   const salt = bcrypt.genSaltSync(10);
   user.passwordHash = bcrypt.hashSync(targetPassword, salt);
+  db.save();
 
   return res.json({
     success: true,

@@ -353,4 +353,65 @@ export const api = {
       body: JSON.stringify({ role, defaultPassword }),
     });
   },
+
+  async getDatabaseStatus(): Promise<{
+    status: {
+      filePath: string;
+      dataDir: string;
+      fileSize: number;
+      lastSavedAt: string | null;
+      counts: {
+        users: number;
+        attendance: number;
+        outpasses: number;
+        sessions: number;
+        hostelLogs: number;
+        classrooms: number;
+        emailLogs: number;
+      };
+    };
+  }> {
+    return request('/api/admin/database/status');
+  },
+
+  async downloadDatabaseBackup(): Promise<void> {
+    const token = getStoredToken();
+    const headers = new Headers();
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+
+    const res = await fetch('/api/admin/database/backup', { headers });
+    if (!res.ok) {
+      throw new Error('Failed to generate database backup');
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `campus_attendance_backup_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+
+  async restoreDatabase(backupData: any): Promise<{
+    success: boolean;
+    message: string;
+    counts: any;
+  }> {
+    return request('/api/admin/database/restore', {
+      method: 'POST',
+      body: JSON.stringify({ backupData }),
+    });
+  },
+
+  async resetDatabaseDemo(): Promise<{
+    success: boolean;
+    message: string;
+    status: any;
+  }> {
+    return request('/api/admin/database/reset-demo', {
+      method: 'POST',
+    });
+  },
 };

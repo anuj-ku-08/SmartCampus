@@ -1,3 +1,5 @@
+import { db } from './store';
+
 export interface EmailAlertRecord {
   id: string;
   recipientEmail: string;
@@ -10,7 +12,7 @@ export interface EmailAlertRecord {
   status: 'SENT' | 'QUEUED';
 }
 
-const emailLogs: EmailAlertRecord[] = [
+const defaultEmailLogs: EmailAlertRecord[] = [
   {
     id: 'em-001',
     recipientEmail: 'parent.reddy@example.com',
@@ -50,11 +52,17 @@ export async function sendEmailAlert(params: {
     status: 'SENT',
   };
 
-  emailLogs.unshift(record);
+  if (db && Array.isArray(db.emailLogs)) {
+    db.emailLogs.unshift(record);
+    db.save();
+  }
   console.log(`[ALERT DISPATCHED] To: ${params.recipientEmail} | Subject: ${params.subject}`);
   return record;
 }
 
 export function getEmailLogs(): EmailAlertRecord[] {
-  return [...emailLogs];
+  if (db && Array.isArray(db.emailLogs) && db.emailLogs.length > 0) {
+    return db.emailLogs;
+  }
+  return defaultEmailLogs;
 }

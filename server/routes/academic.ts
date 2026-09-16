@@ -68,6 +68,7 @@ router.post('/sessions', authMiddleware, (req, res) => {
   });
 
   db.sessions.unshift(newSession);
+  db.save();
 
   return res.json({
     session: newSession,
@@ -140,6 +141,7 @@ router.post('/sessions/:id/stop', authMiddleware, (req, res) => {
 
   session.isActive = false;
   session.endedAt = new Date().toISOString();
+  db.save();
 
   const attendees = db.attendance.filter((a) => a.sessionId === id);
 
@@ -255,6 +257,7 @@ router.post('/verify', authMiddleware, async (req, res) => {
   };
 
   db.attendance.push(newRecord);
+  db.save();
 
   return res.json({
     success: true,
@@ -314,6 +317,7 @@ router.post('/manual-override', authMiddleware, (req, res) => {
   };
 
   db.attendance.push(manualRecord);
+  db.save();
 
   return res.json({
     message: `Manual attendance recorded for ${student.name} (${student.rollNumber})`,

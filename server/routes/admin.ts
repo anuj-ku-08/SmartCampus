@@ -59,6 +59,7 @@ router.post('/users', authMiddleware, (req, res) => {
   };
 
   db.users.push(newUser);
+  db.save();
   const { passwordHash: _, ...safeUser } = newUser;
   return res.json({ success: true, user: safeUser });
 });
@@ -84,6 +85,7 @@ router.put('/users/:id/password', authMiddleware, (req, res) => {
 
   const salt = bcrypt.genSaltSync(10);
   user.passwordHash = bcrypt.hashSync(password.trim(), salt);
+  db.save();
 
   return res.json({
     success: true,
@@ -114,6 +116,7 @@ router.post('/batch-reset-password', authMiddleware, (req, res) => {
       affectedCount++;
     }
   });
+  db.save();
 
   return res.json({
     success: true,
@@ -143,6 +146,7 @@ router.post('/classrooms', authMiddleware, (req, res) => {
   };
 
   db.classrooms.push(newClassroom);
+  db.save();
   return res.json({ success: true, classroom: newClassroom });
 });
 
@@ -160,6 +164,7 @@ router.put('/classrooms/:id', authMiddleware, (req, res) => {
   if (typeof latitude === 'number') classroom.latitude = latitude;
   if (typeof longitude === 'number') classroom.longitude = longitude;
   if (typeof maxRadiusMeters === 'number') classroom.maxRadiusMeters = maxRadiusMeters;
+  db.save();
 
   return res.json({ success: true, classroom });
 });
@@ -173,8 +178,65 @@ router.post('/hostel-config', authMiddleware, (req, res) => {
   const { curfewTime } = req.body;
   if (curfewTime) {
     db.hostelConfig.curfewTime = curfewTime;
+    db.save();
   }
   return res.json({ success: true, config: db.hostelConfig });
+});
+
+// Database Persistence & Backup/Restore Endpoints (Admin only)
+router.get('/database/status', authMiddleware, (req, res) => {
+  const authUser = (req as any).user;
+  if (authUser.role !== 'admin') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+  return res.json({ status: db.getStatus() });
+});
+
+router.get('/database/backup', authMiddleware, (req, res) => {
+  const authUser = (req as any).user;
+  if (authUser.role !== 'admin') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+  const backup = db.exportData();
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="campus_attendance_backup_${new Date().toISOString().split('T')[0]}.json"`
+  );
+  return res.send(JSON.stringify(backup, null, 2));
+});
+
+router.post('/database/restore', authMiddleware, (req, res) => {
+  const authUser = (req as any).user;
+  if (authUser.role !== 'admin') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  const { backupData } = req.body;
+  if (!backupData) {
+    return res.status(400).json({ error: 'Backup data payload is required' });
+  }
+
+  try {
+    const result = db.importData(backupData);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'Failed to restore database backup' });
+  }
+});
+
+router.post('/database/reset-demo', authMiddleware, (req, res) => {
+  const authUser = (req as any).user;
+  if (authUser.role !== 'admin') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  db.resetToDefaultSeed();
+  return res.json({
+    success: true,
+    message: 'System database successfully reset to default demonstration records and saved to persistent disk.',
+    status: db.getStatus(),
+  });
 });
 
 // Email and alert logs
